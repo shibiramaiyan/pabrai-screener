@@ -53,26 +53,29 @@ the Business Card checklist keeps those in front of you.
 """
 
 
-def screen_cache_path(watchlist: tuple = ()) -> Path:
+def screen_cache_path(watchlist: tuple = (),
+                      rrsp: bool = False) -> Path:
     suffix = f"_w{abs(hash(tuple(sorted(watchlist))))}" if watchlist else ""
-    return CACHE_DIR / f"screen_{date.today().isoformat()}{suffix}.pkl"
+    uni_tag = "_rrsp" if rrsp else ""
+    return CACHE_DIR / f"screen_{date.today().isoformat()}{uni_tag}{suffix}.pkl"
 
 
 @st.cache_data(show_spinner="Loading index constituents...", ttl=3600)
-def get_universe(force: bool) -> pd.DataFrame:
-    return load_universe(force_refresh=force)
+def get_universe(force: bool, rrsp: bool) -> pd.DataFrame:
+    return load_universe(force_refresh=force, rrsp=rrsp)
 
 
 def run_screen(force: bool,
-               watchlist: list[str] | None = None) -> tuple[list[model.Pick], dict]:
+               watchlist: list[str] | None = None,
+               rrsp: bool = False) -> tuple[list[model.Pick], dict]:
     watchlist = watchlist or []
-    cache_file = screen_cache_path(tuple(watchlist))
+    cache_file = screen_cache_path(tuple(watchlist), rrsp)
     if not force and cache_file.exists():
         with cache_file.open("rb") as f:
             payload = pickle.load(f)
         return payload["picks"], payload["meta"]
 
-    uni = get_universe(force)
+    uni = get_universe(force, rrsp)
     if watchlist:
         extra = [t for t in watchlist if t not in set(uni["ticker"])]
         if extra:
@@ -165,6 +168,11 @@ with st.sidebar:
     portfolio = st.number_input("Portfolio value ($)", min_value=0.0,
                                 value=100000.0, step=10000.0)
     mkt = st.radio("Market", ["Both", "US", "CA"], horizontal=True)
+    uni_mode = st.selectbox(
+        "Universe",
+        ["All RRSP-eligible (TSX/TSXV + NYSE/NASDAQ/AMEX)",
+         "Index only (S&P 500/400 + TSX Composite - faster)"])
+    rrsp = uni_mode.startswith("All")
     st.divider()
     st.markdown(
         "**His rules**\n"
@@ -196,14 +204,14 @@ with st.sidebar:
 # Main
 # ---------------------------------------------------------------------------
 
-cache_file = screen_cache_path(tuple(watchlist))
+cache_file = screen_cache_path(tuple(watchlist), rrsp)
 picks, meta = [], {}
 if cache_file.exists() and not run and not force:
     with cache_file.open("rb") as f:
         payload = pickle.load(f)
     picks, meta = payload["picks"], payload["meta"]
 elif run:
-    picks, meta = run_screen(force, watchlist)
+    picks, meta = run_screen(force, watchlist, rrsp)
 
 if mkt != "Both":
     picks = [p for p in picks if p.market == mkt]
