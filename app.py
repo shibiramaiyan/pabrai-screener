@@ -54,34 +54,37 @@ the Business Card checklist keeps those in front of you.
 
 
 def screen_cache_path(watchlist: tuple = (),
-                      rrsp: bool = False) -> Path:
+                      uni_tag: str = "") -> Path:
     suffix = f"_w{abs(hash(tuple(sorted(watchlist))))}" if watchlist else ""
-    uni_tag = "_rrsp" if rrsp else ""
     return CACHE_DIR / f"screen_{date.today().isoformat()}{uni_tag}{suffix}.pkl"
 
 
 @st.cache_data(show_spinner="Loading index constituents...", ttl=3600)
-def get_universe(force: bool, rrsp: bool) -> pd.DataFrame:
-    return load_universe(force_refresh=force, rrsp=rrsp)
+def get_universe(force: bool, rrsp: bool, india: bool) -> pd.DataFrame:
+    return load_universe(force_refresh=force, rrsp=rrsp, india=india)
 
 
 def run_screen(force: bool,
                watchlist: list[str] | None = None,
-               rrsp: bool = False) -> tuple[list[model.Pick], dict]:
+               rrsp: bool = False,
+               india: bool = False) -> tuple[list[model.Pick], dict]:
     watchlist = watchlist or []
-    cache_file = screen_cache_path(tuple(watchlist), rrsp)
+    uni_tag = "_wide" if india else "_rrsp" if rrsp else ""
+    cache_file = screen_cache_path(tuple(watchlist), uni_tag)
     if not force and cache_file.exists():
         with cache_file.open("rb") as f:
             payload = pickle.load(f)
         return payload["picks"], payload["meta"]
 
-    uni = get_universe(force, rrsp)
+    uni = get_universe(force, rrsp, india)
     if watchlist:
         extra = [t for t in watchlist if t not in set(uni["ticker"])]
         if extra:
             uni = pd.concat([uni, pd.DataFrame({
                 "ticker": extra,
-                "market": ["CA" if t.endswith(".TO") else "US" for t in extra],
+                "market": ["CA" if t.endswith((".TO", ".V"))
+                           else "IN" if t.endswith((".NS", ".BO"))
+                           else "US" for t in extra],
                 "source": "watchlist",
             })], ignore_index=True)
     tickers = uni["ticker"].tolist()
@@ -167,12 +170,14 @@ with st.sidebar:
 
     portfolio = st.number_input("Portfolio value ($)", min_value=0.0,
                                 value=100000.0, step=10000.0)
-    mkt = st.radio("Market", ["Both", "US", "CA"], horizontal=True)
+    mkt = st.radio("Market", ["Both", "US", "CA", "IN"], horizontal=True)
     uni_mode = st.selectbox(
         "Universe",
         ["All RRSP-eligible (TSX/TSXV + NYSE/NASDAQ/AMEX)",
+         "US + Canada + India NSE - widest",
          "Index only (S&P 500/400 + TSX Composite - faster)"])
-    rrsp = uni_mode.startswith("All")
+    india = uni_mode.startswith("US + Canada + India")
+    rrsp = uni_mode.startswith("All") or india
     st.divider()
     st.markdown(
         "**His rules**\n"
@@ -204,14 +209,15 @@ with st.sidebar:
 # Main
 # ---------------------------------------------------------------------------
 
-cache_file = screen_cache_path(tuple(watchlist), rrsp)
+uni_tag = "_wide" if india else "_rrsp" if rrsp else ""
+cache_file = screen_cache_path(tuple(watchlist), uni_tag)
 picks, meta = [], {}
 if cache_file.exists() and not run and not force:
     with cache_file.open("rb") as f:
         payload = pickle.load(f)
     picks, meta = payload["picks"], payload["meta"]
 elif run:
-    picks, meta = run_screen(force, watchlist, rrsp)
+    picks, meta = run_screen(force, watchlist, rrsp, india)
 
 if mkt != "Both":
     picks = [p for p in picks if p.market == mkt]
