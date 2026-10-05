@@ -82,6 +82,7 @@ def estimate_intrinsic_value(tech: dict, fund: dict) -> dict:
         "iv_fcf": iv_fcf,
         "iv_ebitda": iv_ebitda,
         "iv_eps": iv_eps,
+        "n_estimators": len(usable),
         "iv_fwd_2_5y": iv_fwd,
         "iv_spread": spread,
         "g_used": g,
@@ -264,6 +265,7 @@ class Pick:
     reasons: list[str] = field(default_factory=list)
     iv: float = np.nan
     iv_fwd: float = np.nan
+    n_est: int = 0
     mos_now: float = np.nan
     max_buy: float = np.nan
     pe_f: float = np.nan
@@ -314,6 +316,9 @@ def build_picks(
         mos_s, w1 = score_mos(ivd["mos_now"], ivd["mos_fwd"])
         if ivd["iv_spread"] > 4:
             w1 = w1 + ["estimators disagree >4x - IV low confidence"]
+        if ivd["n_estimators"] == 1:
+            w1 = w1 + ["only 1/3 estimators usable (neg FCF/EPS) "
+                       "- IV very low confidence"]
         dn_s, w2 = score_downside(tech, fund)
         mo_s, w3 = score_moat(fund)
         ow_s, w4 = score_ownership(fund, tech)
@@ -335,6 +340,7 @@ def build_picks(
             moat_s=round(mo_s, 1), own_s=round(ow_s, 1),
             reasons=w1 + w2 + w3 + w4,
             iv=ivd["iv"], iv_fwd=ivd["iv_fwd_2_5y"],
+            n_est=ivd["n_estimators"],
             mos_now=ivd["mos_now"], max_buy=ivd["max_buy"],
             pe_f=_num(fund.get("forwardPE")),
             fcf_yield=(fcf / mc if mc > 0 and not np.isnan(fcf) else np.nan),
@@ -350,12 +356,17 @@ def explain_pick(p: "Pick") -> list[str]:
     """Five plain-English bullets on why the signal fired."""
     b: list[str] = []
     if not np.isnan(p.iv):
+        iv_fmt = f"{p.iv:.2f}" if p.iv < 10 else f"{p.iv:.0f}"
         b.append(
-            f"Trades at ${p.last:.2f} vs an estimated worth of ~${p.iv:.0f} "
+            f"Trades at ${p.last:.2f} vs an estimated worth of ~${iv_fmt} "
             f"({p.mos_now:.0%} discount). His rule: only buy below "
             f"${p.max_buy:.2f} (50% of that estimate) - right now the "
             "answer is "
             + ("yes." if p.last <= p.max_buy else "no."))
+        if p.n_est == 1:
+            b.append("Heads up: only 1 of 3 value estimators produced a "
+                     "number - negative earnings or free cash flow knocked "
+                     "the others out, so treat that IV as very rough.")
     else:
         b.append("Intrinsic value can't be estimated from the data "
                  "(no reliable earnings or cash flow), so there is no real "

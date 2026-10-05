@@ -102,6 +102,10 @@ def render_business_card(pick, prof: dict, portfolio_value: float = 0.0) -> None
             f"**Signal:** {pick.signal} &nbsp;|&nbsp; "
             f"IV est {_px(pick.iv)} → 2-3yr {_px(pick.iv_fwd)} &nbsp;|&nbsp; "
             f"**Max buy (50% rule): {_px(pick.max_buy)}**"))
+        if getattr(pick, "n_est", 0) == 1:
+            st.caption("Only 1 of 3 IV estimators produced a value "
+                       "(loss-making or no FCF) - treat the estimate as "
+                       "very rough.")
         cann, flag = model.cannibal_check(prof)
         if flag:
             st.markdown(f"**Buybacks:** {flag} ({cann:+.1%}/yr share count)")
